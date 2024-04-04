@@ -1,0 +1,138 @@
+Analyzed bike sharing data from Google BigQuery for project: trans-envoy-396413
+Dataset: google_data_analytics
+Table: capstone_project
+
+--Checked for duplicates by using:
+SELECT Distinct ride_id from `trans-envoy-396413.google_data_analytics.capstone_project`
+
+
+##subquery to extract trip duration in minutes and summarize the data with casual and member riders
+select member_casual, avg(duration_minutes) as avg_duration
+from 
+(
+SELECT
+ride_id,
+  rideable_type,
+  started_at,
+  ended_at,
+  member_casual,
+  # Calculate the difference between ended_at and started_at in minutes
+  TIMESTAMP_DIFF(ended_at, started_at, minute) AS duration_minutes
+FROM
+  `trans-envoy-396413.google_data_analytics.capstone_project`
+)
+group by member_casual
+
+
+## summarizing trip_durations month by month
+WITH ride_durations AS (
+ SELECT
+   ride_id,
+   rideable_type,
+   started_at,
+   ended_at,
+   member_casual,
+   start_station_name,
+   start_station_id,
+   end_station_name,
+   end_station_id,
+   EXTRACT(MONTH FROM started_at) AS ride_month,
+   # Calculate positive duration in minutes (avoid negative values)
+   CASE WHEN TIMESTAMP_DIFF(ended_at, started_at, minute) >  0 THEN TIMESTAMP_DIFF(ended_at, started_at, minute)
+      ELSE 0
+ END AS duration_minutes
+ 
+ FROM
+   `trans-envoy-396413.google_data_analytics.capstone_project`
+)
+SELECT
+ member_casual, ride_month,
+ # Average duration for rides with positive duration (prevents skewed data)
+ AVG(duration_minutes) AS average_duration_minutes
+FROM
+ ride_durations
+WHERE
+ duration_minutes > 0  -- Filter for positive durations only
+GROUP BY
+ member_casual, ride_month
+ORDER BY
+ ride_month
+
+
+## Count the number of riders for members and casual month by month
+SELECT
+member_casual,
+count(member_casual),
+EXTRACT(MONTH FROM started_at) AS ride_month
+FROM `trans-envoy-396413.google_data_analytics.capstone_project`
+group by member_casual, ride_month
+
+
+## checked for duplicates
+SELECT count(ride_id)
+FROM `trans-envoy-396413.cyclist_google_dataset.divvy_tripdata_202402`
+group by ride_id
+having count(ride_id) >1
+
+
+-- Summary of casual riders and member riders on weekdays and weekends over the last 12 months
+
+WITH CTE_traffic AS
+(
+SELECT member_casual,
+EXTRACT(DAYOFWEEK FROM started_at) AS started_at_day_of_week,
+EXTRACT (MONTH FROM started_at) as ride_month,
+FROM `trans-envoy-396413.google_data_analytics.capstone_project`
+)
+SELECT member_casual, count(member_casual) as ride_count, ride_month,
+CASE
+WHEN started_at_day_of_week BETWEEN 1 and 5 THEN 'weekday'
+ELSE 'weekends'
+END AS day_of_week
+FROM CTE_traffic
+GROUP BY member_casual, day_of_week, ride_month
+ORDER BY ride_month
+
+
+#Analyzing member_casual by seasons by extracting month from the timestamp columns
+# Extract month from started_at
+ WITH season_rider_detail AS
+(
+SELECT
+EXTRACT(MONTH FROM started_at) AS ride_month,
+member_casual,
+FROM `google_data_analytics.capstone_project`
+ ),
+season_summary as #creating another table expression
+(
+select ride_month,member_casual, count(member_casual) as count_member_casual,
+CASE
+when ride_month between 3 and 5 then 'spring'
+when ride_month between 6 and 8 then 'summer'
+when ride_month between 9 and 11 then 'fall'
+ELSE 'winter'
+END AS season_rider_details
+from season_rider_detail
+--where member_casual in  ('member' ,'casual')
+GROUP BY ride_month, member_casual, season_rider_details)
+SELECT season_rider_details, member_casual, sum(count_member_casual) as sum_member_count_season from season_summary
+GROUP BY season_rider_details,member_casual
+ORDER BY season_rider_details asc
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
